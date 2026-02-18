@@ -3,3 +3,5 @@ psycopg2-binary>=2.9.0
 pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.15.0
+folium>=0.14.0
+streamlit-folium>=0.18.0

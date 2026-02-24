@@ -395,9 +395,9 @@ with k6:
 # ═══════════════════════════════════════════
 
 st.markdown("")
-tab_map, tab_problems, tab_ndvi, tab_disease, tab_forecast, tab_history, tab_alerts, tab_table = st.tabs([
-    "🗺️ რუკა", "⚠️ პრობლემური", "🛰 NDVI/WSI", "🦠 დაავადებები",
-    "⛅ პროგნოზი", "📈 ისტორია", "🚨 ალერტები", "📋 მონაცემები"
+tab_map, tab_problems, tab_ai, tab_ops, tab_harvest, tab_ndvi, tab_disease, tab_forecast, tab_history, tab_alerts, tab_table = st.tabs([
+    "🗺️ რუკა", "⚠️ პრობლემური", "🧠 AI", "✍️ ოპერაციები", "🫒 მოსავალი",
+    "🛰 NDVI/WSI", "🦠 დაავადებები", "⛅ პროგნოზი", "📈 ისტორია", "🚨 ალერტები", "📋 მონაცემები"
 ])
 
 
@@ -410,7 +410,7 @@ with tab_map:
         poly_df = load_polygons()
         points_df = load_points()
 
-        map_mode = st.radio("შეფერადება", ["NDVI", "WSI", "დაავადება"], horizontal=True)
+        map_mode = st.radio("შეფერადება", ["NDVI", "NDWI", "WSI", "დაავადება"], horizontal=True)
 
         # ცენტრი
         center_lat = df['latitude'].mean() if df['latitude'].notna().any() else 41.33
@@ -419,6 +419,15 @@ with tab_map:
         m = folium.Map(location=[center_lat, center_lon], zoom_start=13,
                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                        attr='Esri World Imagery')
+
+        def ndwi_color(v):
+            if v is None: return '#808080'
+            v = float(v)
+            if v > -0.1: return '#1565C0'     # ტენიანი (ლურჯი)
+            if v > -0.2: return '#42A5F5'     # ნორმალური
+            if v > -0.3: return '#81D4FA'     # ოდნავ მშრალი
+            if v > -0.4: return '#FFB74D'     # მშრალი
+            return '#E53935'                   # ძალიან მშრალი
 
         # პოლიგონები
         if not poly_df.empty:
@@ -433,6 +442,9 @@ with tab_map:
                 if map_mode == "NDVI":
                     color = ndvi_color(row.get('sat_ndvi'))
                     val = f"NDVI: {row.get('sat_ndvi', 'N/A')}"
+                elif map_mode == "NDWI":
+                    color = ndwi_color(row.get('sat_ndwi'))
+                    val = f"NDWI: {row.get('sat_ndwi', 'N/A')}"
                 elif map_mode == "WSI":
                     color = wsi_color(row.get('wsi'))
                     val = f"WSI: {row.get('wsi', 'N/A')}"
@@ -445,6 +457,7 @@ with tab_map:
                 <b>{row['cadastral_code']}</b><br>
                 {row.get('area_ha', '')} ჰა<br>
                 NDVI: {row.get('sat_ndvi', 'N/A')}<br>
+                NDWI: {row.get('sat_ndwi', 'N/A')}<br>
                 WSI: {row.get('wsi', 'N/A')}<br>
                 დაავადება: {row.get('max_disease_name', 'N/A')}
                 """
@@ -473,13 +486,31 @@ with tab_map:
 
         # ლეგენდა
         if map_mode == "NDVI":
-            legend = """<div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;color:white;font-size:12px;">
-                <b>NDVI</b><br>
-                <span style="color:#2E7D32;">■</span> &gt;0.5 კარგი<br>
-                <span style="color:#8BC34A;">■</span> 0.3-0.5 საშუალო<br>
-                <span style="color:#FFC107;">■</span> 0.2-0.3 დაბალი<br>
-                <span style="color:#F44336;">■</span> &lt;0.2 კრიტიკული
-            </div>"""
+            if map_mode == "NDWI":
+                legend = """<div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;color:white;font-size:12px;">
+                    <b>NDWI</b><br>
+                    <span style="color:#1565C0;">■</span> &gt;-0.1 ტენიანი<br>
+                    <span style="color:#42A5F5;">■</span> -0.1…-0.2 ნორმა<br>
+                    <span style="color:#81D4FA;">■</span> -0.2…-0.3 მშრალი<br>
+                    <span style="color:#FFB74D;">■</span> -0.3…-0.4 ძალიან მშრალი<br>
+                    <span style="color:#E53935;">■</span> &lt;-0.4 კრიტიკული
+                </div>"""
+            elif map_mode == "WSI":
+                legend = """<div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;color:white;font-size:12px;">
+                    <b>WSI</b><br>
+                    <span style="color:#4CAF50;">■</span> &lt;0.3 ნორმა<br>
+                    <span style="color:#FFC107;">■</span> 0.3-0.5 ყურადღება<br>
+                    <span style="color:#FF9800;">■</span> 0.5-0.7 მაღალი<br>
+                    <span style="color:#F44336;">■</span> &gt;0.7 კრიტიკული
+                </div>"""
+            else:
+                legend = """<div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;color:white;font-size:12px;">
+                    <b>NDVI</b><br>
+                    <span style="color:#2E7D32;">■</span> &gt;0.5 კარგი<br>
+                    <span style="color:#8BC34A;">■</span> 0.3-0.5 საშუალო<br>
+                    <span style="color:#FFC107;">■</span> 0.2-0.3 დაბალი<br>
+                    <span style="color:#F44336;">■</span> &lt;0.2 კრიტიკული
+                </div>"""
             m.get_root().html.add_child(folium.Element(legend))
 
         st_folium(m, width=None, height=600, use_container_width=True)
@@ -580,6 +611,340 @@ with tab_problems:
                      color='რაოდენობა', color_continuous_scale=['#4CAF50', '#F44336'])
         fig.update_layout(height=250, showlegend=False, plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
+
+
+# ═══ AI ანალიზი ═══
+with tab_ai:
+    st.markdown("#### 🧠 AI Multi-Agent ანალიზი")
+    try:
+        conn_ai = get_connection()
+        ai_df = pd.read_sql("""
+            SELECT analysis_date, analysis_text, weather_json, satellite_json, disease_json, created_at
+            FROM ai_analysis
+            ORDER BY analysis_date DESC
+            LIMIT 7
+        """, conn_ai)
+        conn_ai.close()
+
+        if not ai_df.empty:
+            latest = ai_df.iloc[0]
+
+            # მთავარი ანალიზი
+            st.markdown(f"""<div style="background:linear-gradient(135deg, #1a1a3e 0%, #0d0d2b 100%);
+                padding:20px; border-radius:12px; border-left:4px solid #7C4DFF; margin-bottom:16px;">
+                <span style="font-size:18px; font-weight:bold; color:#B388FF;">🧠 AI ექსპერტი</span>
+                <span style="color:#888; font-size:12px; float:right;">📅 {latest['analysis_date']}</span>
+                <hr style="border-color:#333; margin:10px 0;">
+                <div style="color:#ddd; font-size:14px; line-height:1.6;">{latest['analysis_text'][:2000]}</div>
+            </div>""", unsafe_allow_html=True)
+
+            # აგენტების დეტალები
+            agent_cols = st.columns(3)
+
+            # 🌦 Weather
+            with agent_cols[0]:
+                w = latest.get('weather_json')
+                if w and isinstance(w, dict):
+                    sev = {"green":"🟢","yellow":"🟡","red":"🔴"}.get(w.get("severity",""), "⚪")
+                    st.markdown(f"""<div style="background:#1a2a1a; padding:12px; border-radius:8px; min-height:150px;">
+                        <b>🌦 ამინდი {sev}</b><br>
+                        <span style="color:#ccc; font-size:13px;">{w.get('summary','')}</span>
+                    </div>""", unsafe_allow_html=True)
+                    if w.get("risks"):
+                        for r in w["risks"][:3]:
+                            st.caption(f"⚠️ {r.get('type','')}: {r.get('detail','')}")
+
+            # 🛰 Satellite
+            with agent_cols[1]:
+                s = latest.get('satellite_json')
+                if s and isinstance(s, dict):
+                    sev = {"green":"🟢","yellow":"🟡","red":"🔴"}.get(s.get("severity",""), "⚪")
+                    st.markdown(f"""<div style="background:#1a1a2a; padding:12px; border-radius:8px; min-height:150px;">
+                        <b>🛰 სატელიტი {sev}</b><br>
+                        <span style="color:#ccc; font-size:13px;">{s.get('summary','')}</span>
+                    </div>""", unsafe_allow_html=True)
+                    if s.get("anomalies"):
+                        for a in s["anomalies"][:3]:
+                            st.caption(f"🔴 {a.get('cad','')}: {a.get('issue','')}")
+
+            # 🦠 Disease
+            with agent_cols[2]:
+                d = latest.get('disease_json')
+                if d and isinstance(d, dict):
+                    sev = {"green":"🟢","yellow":"🟡","red":"🔴"}.get(d.get("severity",""), "⚪")
+                    st.markdown(f"""<div style="background:#2a1a1a; padding:12px; border-radius:8px; min-height:150px;">
+                        <b>🦠 დაავადება {sev}</b><br>
+                        <span style="color:#ccc; font-size:13px;">{d.get('summary','')}</span>
+                    </div>""", unsafe_allow_html=True)
+                    if d.get("diseases"):
+                        for dis in d["diseases"][:3]:
+                            st.caption(f"🦠 {dis.get('name','')}: {dis.get('risk','')}")
+
+            # ისტორია
+            if len(ai_df) > 1:
+                st.markdown("---")
+                st.markdown("##### 📜 წინა ანალიზები")
+                for _, row in ai_df.iloc[1:].iterrows():
+                    with st.expander(f"📅 {row['analysis_date']}"):
+                        st.markdown(row['analysis_text'])
+        else:
+            st.info("🧠 AI ანალიზი ჯერ არ არის. გაუშვით `python ai_agents.py`")
+    except Exception as e:
+        st.info(f"AI ცხრილი ჯერ არ შექმნილა. პირველი run_once.py-ს შემდეგ გამოჩნდება.")
+
+
+# ═══════════════════════════════════════════
+# ოპერაციები — შეწამვლა, გასხვლა, სასუქი
+# ═══════════════════════════════════════════
+
+with tab_ops:
+    st.markdown("#### ✍️ ოპერაციების ჟურნალი")
+
+    # ──── ჩაწერის ფორმა ────
+    with st.expander("➕ ახალი ოპერაციის ჩაწერა", expanded=False):
+        all_df_ops = load_parcels()
+        cad_list = sorted(all_df_ops['cadastral_code'].dropna().tolist())
+
+        oc1, oc2 = st.columns(2)
+        with oc1:
+            ops_cads = st.multiselect("📍 ნაკვეთ(ებ)ი", cad_list, key="ops_cads")
+            ops_date = st.date_input("📅 თარიღი", value=date.today(), key="ops_date")
+            ops_type = st.selectbox("🔧 ოპერაციის ტიპი", [
+                "spray — შეწამვლა", "prune — გასხვლა", "fertilize — სასუქი",
+                "irrigate — მორწყვა", "weed — სარეველა", "soil_work — ნიადაგის დამუშავება",
+                "other — სხვა"
+            ], key="ops_type")
+            ops_type_code = ops_type.split(" — ")[0]
+
+        with oc2:
+            if ops_type_code == "spray":
+                ops_product = st.text_input("💊 პრეპარატი", key="ops_product", placeholder="მაგ: სპილენძის ოქსიქლორიდი")
+                ops_ingredient = st.text_input("🧪 აქტიური ნივთიერება", key="ops_ingr", placeholder="მაგ: Cu(OH)2")
+                ops_conc = st.number_input("📊 კონცენტრაცია %", 0.0, 10.0, 0.3, 0.1, key="ops_conc")
+                ops_amount = st.number_input("📏 ხარჯვა ლ/ჰა", 0.0, 1000.0, 300.0, 50.0, key="ops_amount")
+                ops_target = st.selectbox("🎯 სამიზნე", ["Peacock Spot", "Verticillium", "Anthracnose",
+                    "Olive Fly", "Olive Moth", "პრევენციული", "სხვა"], key="ops_target")
+            elif ops_type_code == "fertilize":
+                ops_product = st.text_input("🌱 სასუქი", key="fert_name", placeholder="მაგ: NPK 15-15-15")
+                ops_npk = st.text_input("NPK თანაფარდობა", key="fert_npk", placeholder="15-15-15")
+                ops_amount = st.number_input("📏 კგ/ჰა", 0.0, 1000.0, 100.0, 10.0, key="fert_amount")
+                ops_ingredient = ops_npk
+                ops_conc = 0
+                ops_target = ""
+            elif ops_type_code == "irrigate":
+                ops_amount = st.number_input("💧 მმ", 0.0, 200.0, 20.0, 5.0, key="irr_mm")
+                ops_duration = st.number_input("⏱ წუთი", 0, 600, 60, 15, key="irr_dur")
+                ops_product = ""
+                ops_ingredient = ""
+                ops_conc = 0
+                ops_target = ""
+            else:
+                ops_product = ""
+                ops_ingredient = ""
+                ops_conc = 0
+                ops_amount = 0
+                ops_target = ""
+
+            ops_cost = st.number_input("💰 ხარჯი (₾)", 0.0, 50000.0, 0.0, 10.0, key="ops_cost")
+            ops_notes = st.text_area("📝 შენიშვნა", key="ops_notes", height=68)
+
+        if st.button("💾 შენახვა", key="save_ops", type="primary", use_container_width=True):
+            if ops_cads and ops_type_code:
+                try:
+                    conn_ops = get_connection()
+                    cur_ops = conn_ops.cursor()
+                    # ცხრილის შემოწმება
+                    cur_ops.execute("""
+                        CREATE TABLE IF NOT EXISTS field_operations (
+                            id SERIAL PRIMARY KEY, field_id INTEGER, cadastral_code VARCHAR(50),
+                            operation_date DATE, operation_type VARCHAR(30),
+                            product_name VARCHAR(100), active_ingredient VARCHAR(100),
+                            concentration_pct FLOAT, amount_per_ha FLOAT, amount_unit VARCHAR(20) DEFAULT 'ლ/ჰა',
+                            target_disease VARCHAR(50), spray_method VARCHAR(30),
+                            fertilizer_type VARCHAR(50), npk_ratio VARCHAR(20), amount_kg_ha FLOAT,
+                            water_amount_mm FLOAT, duration_minutes INTEGER, irrigation_method VARCHAR(30),
+                            area_treated_ha FLOAT, weather_conditions VARCHAR(100),
+                            operator_name VARCHAR(50), cost_gel FLOAT DEFAULT 0, notes TEXT,
+                            was_ai_recommended BOOLEAN DEFAULT FALSE,
+                            effectiveness_score INTEGER, effectiveness_note TEXT,
+                            created_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    saved = 0
+                    for cad in ops_cads:
+                        # field_id პოვნა
+                        cur_ops.execute("SELECT id FROM fields WHERE cadastral_code = %s LIMIT 1", (cad,))
+                        fid_row = cur_ops.fetchone()
+                        fid = fid_row[0] if fid_row else None
+
+                        cur_ops.execute("""
+                            INSERT INTO field_operations (field_id, cadastral_code, operation_date,
+                                operation_type, product_name, active_ingredient, concentration_pct,
+                                amount_per_ha, target_disease, cost_gel, notes)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        """, (fid, cad, ops_date, ops_type_code, ops_product,
+                              ops_ingredient, ops_conc, ops_amount, ops_target,
+                              ops_cost, ops_notes))
+                        saved += 1
+
+                    conn_ops.commit()
+                    cur_ops.close()
+                    conn_ops.close()
+                    st.success(f"✅ {saved} ნაკვეთზე ჩაწერილია!")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"❌ შეცდომა: {e}")
+            else:
+                st.warning("აირჩიეთ ნაკვეთი და ოპერაციის ტიპი")
+
+    # ──── ოპერაციების ისტორია ────
+    st.markdown("---")
+    st.markdown("##### 📜 ბოლო ოპერაციები")
+    try:
+        conn_h = get_connection()
+        ops_hist = pd.read_sql("""
+            SELECT cadastral_code AS "კადასტრი", operation_date AS "თარიღი",
+                   operation_type AS "ტიპი", product_name AS "პრეპარატი/სასუქი",
+                   concentration_pct AS "%", amount_per_ha AS "რაოდენობა",
+                   target_disease AS "სამიზნე", cost_gel AS "ხარჯი ₾", notes AS "შენიშვნა"
+            FROM field_operations
+            ORDER BY operation_date DESC, created_at DESC
+            LIMIT 50
+        """, conn_h)
+        conn_h.close()
+
+        if not ops_hist.empty:
+            # ტიპის ემოჯი
+            type_emoji = {"spray":"🧪","prune":"✂️","fertilize":"🌱","irrigate":"💧","weed":"🌿","soil_work":"🚜","other":"📋"}
+            ops_hist["ტიპი"] = ops_hist["ტიპი"].map(lambda x: f"{type_emoji.get(x,'')} {x}")
+            st.dataframe(ops_hist, use_container_width=True, height=400)
+
+            # სტატისტიკა
+            sc1, sc2, sc3 = st.columns(3)
+            with sc1:
+                st.metric("🧪 შეწამვლები", int((ops_hist["ტიპი"].str.contains("spray")).sum()))
+            with sc2:
+                total_cost = ops_hist["ხარჯი ₾"].sum()
+                st.metric("💰 ჯამი ხარჯი", f"{total_cost:.0f} ₾")
+            with sc3:
+                st.metric("📋 სულ ოპერაცია", len(ops_hist))
+        else:
+            st.info("ოპერაციები ჯერ არ ჩაწერილა")
+    except Exception:
+        st.info("ოპერაციების ცხრილი ჯერ არ არის. გაუშვით `python db_init_operations.py`")
+
+
+# ═══════════════════════════════════════════
+# მოსავალი
+# ═══════════════════════════════════════════
+
+with tab_harvest:
+    st.markdown("#### 🫒 მოსავლის აღრიცხვა")
+
+    with st.expander("➕ მოსავლის ჩაწერა", expanded=False):
+        all_df_h = load_parcels()
+        cad_list_h = sorted(all_df_h['cadastral_code'].dropna().tolist())
+
+        hc1, hc2 = st.columns(2)
+        with hc1:
+            h_cad = st.selectbox("📍 ნაკვეთი", cad_list_h, key="h_cad")
+            h_date = st.date_input("📅 კრეფის თარიღი", value=date.today(), key="h_date")
+            h_total_kg = st.number_input("⚖️ სულ კგ", 0.0, 100000.0, 0.0, 50.0, key="h_kg")
+            h_quality = st.selectbox("⭐ ხარისხი", ["A — პრემიუმ", "B — სტანდარტი", "C — ტექნიკური"], key="h_qual")
+
+        with hc2:
+            h_method = st.selectbox("🤲 კრეფის მეთოდი", ["ხელით", "მექანიზებული", "შერეული"], key="h_method")
+            h_workers = st.number_input("👥 სამუშაო ძალა", 0, 100, 5, key="h_workers")
+            h_price = st.number_input("💰 ფასი ₾/კგ", 0.0, 50.0, 3.0, 0.5, key="h_price")
+            h_oil = st.number_input("🫒 ზეთიანობა %", 0.0, 40.0, 18.0, 1.0, key="h_oil")
+            h_notes = st.text_area("📝 შენიშვნა", key="h_notes", height=68)
+
+        if st.button("💾 მოსავლის შენახვა", key="save_harvest", type="primary", use_container_width=True):
+            if h_cad and h_total_kg > 0:
+                try:
+                    conn_hv = get_connection()
+                    cur_hv = conn_hv.cursor()
+                    cur_hv.execute("""
+                        CREATE TABLE IF NOT EXISTS harvest_records (
+                            id SERIAL PRIMARY KEY, field_id INTEGER, cadastral_code VARCHAR(50),
+                            harvest_date DATE, season_year INTEGER,
+                            total_kg FLOAT, yield_kg_per_ha FLOAT, yield_kg_per_tree FLOAT,
+                            quality_grade VARCHAR(20), oil_content_pct FLOAT, fruit_size_mm FLOAT,
+                            maturity_index FLOAT, harvest_method VARCHAR(30),
+                            workers_count INTEGER, hours_total FLOAT,
+                            price_per_kg FLOAT, total_revenue_gel FLOAT, total_cost_gel FLOAT,
+                            profit_gel FLOAT, notes TEXT, created_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    cur_hv.execute("SELECT id, area_ha FROM fields WHERE cadastral_code = %s LIMIT 1", (h_cad,))
+                    frow = cur_hv.fetchone()
+                    fid = frow[0] if frow else None
+                    area = frow[1] if frow else 1
+
+                    yield_ha = h_total_kg / max(area, 0.01)
+                    revenue = h_total_kg * h_price
+                    grade = h_quality.split(" — ")[0]
+
+                    cur_hv.execute("""
+                        INSERT INTO harvest_records (field_id, cadastral_code, harvest_date, season_year,
+                            total_kg, yield_kg_per_ha, quality_grade, oil_content_pct,
+                            harvest_method, workers_count, price_per_kg, total_revenue_gel, notes)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (fid, h_cad, h_date, h_date.year, h_total_kg, yield_ha,
+                          grade, h_oil, h_method, h_workers, h_price, revenue, h_notes))
+
+                    conn_hv.commit()
+                    cur_hv.close()
+                    conn_hv.close()
+                    st.success(f"✅ მოსავალი ჩაწერილია! {h_total_kg:.0f} კგ = {revenue:.0f} ₾")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"❌ {e}")
+            else:
+                st.warning("მიუთითეთ ნაკვეთი და რაოდენობა")
+
+    # ──── მოსავლის ისტორია ────
+    st.markdown("---")
+    st.markdown("##### 📊 მოსავლის ისტორია")
+    try:
+        conn_hh = get_connection()
+        harv_df = pd.read_sql("""
+            SELECT cadastral_code AS "კადასტრი", harvest_date AS "თარიღი",
+                   total_kg AS "კგ", yield_kg_per_ha AS "კგ/ჰა",
+                   quality_grade AS "ხარისხი", oil_content_pct AS "ზეთი %",
+                   harvest_method AS "მეთოდი", workers_count AS "მუშა",
+                   price_per_kg AS "₾/კგ", total_revenue_gel AS "შემოსავალი ₾"
+            FROM harvest_records
+            ORDER BY harvest_date DESC
+            LIMIT 100
+        """, conn_hh)
+        conn_hh.close()
+
+        if not harv_df.empty:
+            st.dataframe(harv_df, use_container_width=True, height=300)
+
+            # KPI
+            hk1, hk2, hk3, hk4 = st.columns(4)
+            with hk1:
+                st.metric("⚖️ სულ მოსავალი", f"{harv_df['კგ'].sum():,.0f} კგ")
+            with hk2:
+                st.metric("📊 საშ. კგ/ჰა", f"{harv_df['კგ/ჰა'].mean():,.0f}")
+            with hk3:
+                st.metric("💰 შემოსავალი", f"{harv_df['შემოსავალი ₾'].sum():,.0f} ₾")
+            with hk4:
+                st.metric("🫒 საშ. ზეთი", f"{harv_df['ზეთი %'].mean():.1f}%")
+
+            # გრაფიკი — მოსავალი კადასტრებით
+            if len(harv_df) > 1:
+                fig_h = px.bar(harv_df, x="კადასტრი", y="კგ/ჰა", color="ხარისხი",
+                    title="მოსავლიანობა კგ/ჰა — ნაკვეთებით",
+                    color_discrete_map={"A":"#4CAF50","B":"#FFC107","C":"#FF9800"})
+                fig_h.update_layout(height=350, plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_h, use_container_width=True)
+        else:
+            st.info("მოსავალი ჯერ არ ჩაწერილა")
+    except Exception:
+        st.info("მოსავლის ცხრილი ჯერ არ არის. გაუშვით `python db_init_operations.py`")
 
 
 # ═══ NDVI / WSI ═══
@@ -703,8 +1068,12 @@ with tab_table:
                 format_func=lambda x: {'date':'თარიღი','cadastral_code':'კადასტრი','latest_ndvi':'NDVI','wsi':'WSI'}[x])
 
         if isinstance(dr, tuple) and len(dr) == 2:
-            mask = (full['date'] >= pd.Timestamp(dr[0])) & (full['date'] <= pd.Timestamp(dr[1]))
-            filtered = full[mask].sort_values(sort_by, ascending=(sort_by != 'wsi'))
+            try:
+                full['date'] = pd.to_datetime(full['date'])
+                mask = (full['date'] >= pd.Timestamp(dr[0])) & (full['date'] <= pd.Timestamp(dr[1]))
+                filtered = full[mask].sort_values(sort_by, ascending=(sort_by != 'wsi'))
+            except Exception:
+                filtered = full.sort_values(sort_by, ascending=(sort_by != 'wsi'))
         else:
             filtered = full.sort_values(sort_by, ascending=(sort_by != 'wsi'))
 

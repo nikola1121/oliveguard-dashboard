@@ -36,6 +36,7 @@ def get_db_config():
             "database": st.secrets["database"]["database"],
             "user": st.secrets["database"]["user"],
             "password": st.secrets["database"]["password"],
+            "sslmode": "require",
         }
     except Exception:
         return {"host": "localhost", "port": 5432, "database": "gis_db",
